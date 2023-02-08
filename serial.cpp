@@ -50,8 +50,8 @@ static int* whichbin;
 static double dxbin;
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
-    nbinsx = ((int)((double) size / (cutoff)) + 1)/3;
-    
+    nbinsx = ((int)((double) size / (cutoff)) + 1);
+    std::cout << "nbins:" << nbinsx << std::endl;
     /// ALLOCATE MEMORY ///
     bins = new particle_t**[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
@@ -72,11 +72,12 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb] = &parts[i];
+        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
         bin_particlecount[ib][jb]++;
         whichbin[2*i] = ib;
         whichbin[2*i+1] = jb;
     }
+    
 }
  
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
@@ -90,7 +91,6 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
             for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
                 particle_t* local_bin = bins[local_i][local_j];
                 for (int j = 0; j < bin_particlecount[local_i][local_j]; ++j) {
-                    std::cout << "here" << std::endl;
                     apply_force(particle, local_bin[j]);
                 }
             }
@@ -110,7 +110,7 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb] = &parts[i];
+        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
         bin_particlecount[ib][jb]++;
         whichbin[2*i] = ib;
         whichbin[2*i+1] = jb;
