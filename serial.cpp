@@ -1,5 +1,6 @@
 #include "common.h"
 #include <cmath>
+#include <iostream>
 
 // Apply the force from neighbor to particle
 void apply_force(particle_t& particle, particle_t& neighbor) {
@@ -42,13 +43,33 @@ void move(particle_t& p, double size) {
     }
 }
 
+static int nbinsx;
+static particle_t*** bins;
+static int** bin_particlecount;
+static double dxbin;
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
-    static int nbinsx = (int)((double) size / (cutoff)) + 1;
-    static int nbins = nbinsx*nbinsx
-    static particle_t*** bins = malloc(nbins * num_parts * sizeof(particle_t));
-    static int** bin_particlecount = malloc(nbins * sizeof(int));   
-    double dxbin = size / (double) nbinsx;
+    nbinsx = (int)((double) size / (cutoff)) + 1;
+    //static const int nbins = nbinsx*nbinsx;
+    // bins = (particle_t***) malloc(nbinsx * nbinsx * num_parts * sizeof(particle_t));
+    // bin_particlecount = (int**) malloc(nbinsx * nbinsx * sizeof(int)); 
+    
+    /// ALLOCATE MEMORY ///
+    bins = new particle_t**[nbinsx];
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        bins[ib] = new particle_t*[nbinsx];
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            bins[ib][jb] = new particle_t[num_parts];
+        }
+    }
+    bin_particlecount = new int*[nbinsx];
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        bin_particlecount[ib] = new int[nbinsx];
+    }
+    
+    /// INITIALIZE ///
+    dxbin = size / (double) nbinsx;
+    std::cout << nbinsx << std::endl;
     // populate bins 
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
@@ -56,7 +77,6 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
         bins[ib][jb] = &parts[i];
         bin_particlecount[ib][jb]++;
     }
-    
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
@@ -64,6 +84,7 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     for (int ib = 0; ib < nbinsx; ++ib) {
         for (int jb = 0; jb < nbinsx; ++jb) {
             particle_t* bin = bins[ib][jb];
+            std::cout << "1" << std::endl;
             for (int i = 0; i < bin_particlecount[ib][jb]; ++i) {
                 particle_t particle = bin[i];
                 particle.ax = particle.ay = 0;
