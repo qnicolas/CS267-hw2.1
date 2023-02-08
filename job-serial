@@ -4,6 +4,7 @@
 #SBATCH -q debug
 #SBATCH -J cs267
 #SBATCH -t 00:30:00
+#SBATCH --account=mp309
 
 #run the application:
 srun -n 1 ./serial

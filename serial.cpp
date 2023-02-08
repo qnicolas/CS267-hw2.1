@@ -44,22 +44,55 @@ void move(particle_t& p, double size) {
 
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
-	// You can use this space to initialize static, global data objects
-    // that you may need. This function will be called once before the
-    // algorithm begins. Do not do any particle simulation here
+    static int nbinsx = (int)((double) size / (cutoff)) + 1;
+    static int nbins = nbinsx*nbinsx
+    static particle_t*** bins = malloc(nbins * num_parts * sizeof(particle_t));
+    static int** bin_particlecount = malloc(nbins * sizeof(int));   
+    double dxbin = size / (double) nbinsx;
+    // populate bins 
+    for (int i = 0; i < num_parts; ++i) {
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        bins[ib][jb] = &parts[i];
+        bin_particlecount[ib][jb]++;
+    }
+    
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     // Compute Forces
-    for (int i = 0; i < num_parts; ++i) {
-        parts[i].ax = parts[i].ay = 0;
-        for (int j = 0; j < num_parts; ++j) {
-            apply_force(parts[i], parts[j]);
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            particle_t* bin = bins[ib][jb];
+            for (int i = 0; i < bin_particlecount[ib][jb]; ++i) {
+                particle_t particle = bin[i];
+                particle.ax = particle.ay = 0;
+                for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
+                    for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
+                        particle_t* local_bin = bins[local_i][local_j];
+                        for (int j = 0; j < bin_particlecount[local_i][local_j]; ++i) {
+                            apply_force(particle, local_bin[j]);
+                        }
+                    }
+                }
+            }
         }
     }
 
     // Move Particles
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
+    }
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            bin_particlecount[ib][jb]=0;
+        }
+    }
+    // populate bins 
+    for (int i = 0; i < num_parts; ++i) {
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        bins[ib][jb] = &parts[i];
+        bin_particlecount[ib][jb]++;
     }
 }
