@@ -12,7 +12,6 @@ void apply_force(particle_t& particle, particle_t& neighbor) {
     // Check if the two particles should interact
     if (r2 > cutoff * cutoff)
         return;
-
     r2 = fmax(r2, min_r * min_r);
     double r = sqrt(r2);
 
@@ -51,7 +50,6 @@ static double dxbin;
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
     nbinsx = ((int)((double) size / (cutoff)) + 1);
-    std::cout << "nbins:" << nbinsx << std::endl;
     /// ALLOCATE MEMORY ///
     bins = new particle_t**[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
@@ -66,9 +64,8 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     }
     
     whichbin = new int[2*num_parts];
-    /// INITIALIZE ///
+    /// INITIALIZE - populate bins  ///
     dxbin = size / (double) nbinsx;
-    // populate bins 
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
@@ -83,30 +80,31 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     // Compute Forces
     for (int i = 0; i < num_parts; ++i) {
-        particle_t particle = parts[i];
         int ib = whichbin[2*i];
         int jb = whichbin[2*i+1];
-        particle.ax = particle.ay = 0;
+        parts[i].ax = parts[i].ay = 0;
         for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
             for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
                 particle_t* local_bin = bins[local_i][local_j];
                 for (int j = 0; j < bin_particlecount[local_i][local_j]; ++j) {
-                    apply_force(particle, local_bin[j]);
+                    apply_force(parts[i], local_bin[j]);
                 }
             }
         }
     }
-
+    
     // Move Particles
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
     }
+    
+    // reset particle counter to 0
     for (int ib = 0; ib < nbinsx; ++ib) {
         for (int jb = 0; jb < nbinsx; ++jb) {
             bin_particlecount[ib][jb]=0;
         }
     }
-    // populate bins 
+    // populate bins again
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
