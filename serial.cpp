@@ -42,51 +42,64 @@ void move(particle_t& p, double size) {
     }
 }
 
-static int nbinsx;
-static particle_t*** bins;
-static int** bin_particlecount;
-static int* whichbin;
-static double dxbin;
+static int nbinsx;  // number of bins in one dimension (total number of bins = nbinsx^2)
+static particle_t*** bins; // 3D array that holds the particles in each bin (dimensions = (bins_x,bins_y,particles))
+static int** bin_particlecount; // 2D array, number of particles in each bin
+static int* whichbin; // array that holds which bin a given particle is in. the x-index of the bin that holds particle n°i is whichbin[2*i] and the y-index is whichbin[2*i+1]
+static double dxbin; // length&width of each bin
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
-    nbinsx = ((int)((double) size / (cutoff)) + 1);
-    /// ALLOCATE MEMORY ///
+    nbinsx = ((int)((double) size / (cutoff)) + 1);  // bin size greater or equal to cutoff length
+    
+    /// Allocate memory ///
+    whichbin = new int[2*num_parts];
     bins = new particle_t**[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
         bins[ib] = new particle_t*[nbinsx];
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            bins[ib][jb] = new particle_t[num_parts];
-        }
     }
     bin_particlecount = new int*[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
         bin_particlecount[ib] = new int[nbinsx];
     }
     
-    whichbin = new int[2*num_parts];
-    /// INITIALIZE - populate bins  ///
+    /// INITIALIZE - compute particle count per bin & which bin each particle is in  ///
     dxbin = size / (double) nbinsx;
+    for (int i = 0; i < num_parts; ++i) {
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        bin_particlecount[ib][jb]++;
+        whichbin[2*i] = ib;
+        whichbin[2*i+1] = jb;
+    }
+}
+ 
+void simulate_one_step(particle_t* parts, int num_parts, double size) {
+    /// Allocate memory for each bin holder  ///
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            bins[ib][jb] = new particle_t[bin_particlecount[ib][jb]];
+            bin_particlecount[ib][jb]=0; // put back to zero as we'll need it for the next loop
+        }
+    }
+    /// Populate each bin holder. bin_particlecount[ib][jb] is used keep track of how many particles we've been adding to each bin ///
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
         bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
         bin_particlecount[ib][jb]++;
-        whichbin[2*i] = ib;
-        whichbin[2*i+1] = jb;
     }
     
-}
- 
-void simulate_one_step(particle_t* parts, int num_parts, double size) {
     // Compute Forces
     for (int i = 0; i < num_parts; ++i) {
         int ib = whichbin[2*i];
         int jb = whichbin[2*i+1];
         parts[i].ax = parts[i].ay = 0;
+        // iterate only over neighboring bins
         for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
             for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
                 particle_t* local_bin = bins[local_i][local_j];
-                for (int j = 0; j < bin_particlecount[local_i][local_j]; ++j) {
+                int count  = bin_particlecount[local_i][local_j];
+                for (int j = 0; j < count; ++j) {
                     apply_force(parts[i], local_bin[j]);
                 }
             }
@@ -98,17 +111,18 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
         move(parts[i], size);
     }
     
-    // reset particle counter to 0
+    // free bin memory and reset particle counter to 0
     for (int ib = 0; ib < nbinsx; ++ib) {
         for (int jb = 0; jb < nbinsx; ++jb) {
+            delete bins[ib][jb];
             bin_particlecount[ib][jb]=0;
         }
     }
-    // populate bins again
+        
+    // compute new bin counts and new particle bins
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
         bin_particlecount[ib][jb]++;
         whichbin[2*i] = ib;
         whichbin[2*i+1] = jb;
