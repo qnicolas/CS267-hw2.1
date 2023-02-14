@@ -2,4 +2,5 @@ build/
 .idea/
 cmake-build-*/
 .ipynb_checkpoints/
-serial.cpp.orig
+serial.cpp.*
+openmp.cpp.*

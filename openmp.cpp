@@ -1,7 +1,12 @@
 #include "common.h"
 #include <omp.h>
 #include <cmath>
+
 #include <cstdio>
+#include <iostream>
+#include <chrono>
+using namespace std;
+using namespace std::chrono;
 
 // Apply the force from neighbor to particle
 void apply_force(particle_t& particle, particle_t& neighbor) {
@@ -48,6 +53,7 @@ static particle_t*** bins; // 3D array that holds the particles in each bin (dim
 static int** bin_particlecount; // 2D array, number of particles in each bin
 static int* whichbin; // array that holds which bin a given particle is in. the x-index of the bin that holds particle n°i is whichbin[2*i] and the y-index is whichbin[2*i+1]
 static double dxbin; // length&width of each bin
+auto start = high_resolution_clock::now();
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
     nbinsx = ((int)((double) size / (cutoff)) + 1);  // bin size greater or equal to cutoff length
@@ -85,27 +91,35 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
  
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     /// Allocate memory for each bin holder  ///
-    // for (int ib = 0; ib < nbinsx; ++ib) {
-    //     for (int jb = 0; jb < nbinsx; ++jb) {
-            // bins[ib][jb] = new particle_t[bin_particlecount[ib][jb]];
-            // bin_particlecount[ib][jb]=0; // put back to zero as we'll need it for the next loop
-        // }
-    // }
-
+    #pragma omp single //for collapse(2)
+    {
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            //bins[ib][jb] = new particle_t[bin_particlecount[ib][jb]];
+            bin_particlecount[ib][jb]=0; // put back to zero as we'll need it for the next loop
+            
+        }
+    }
     /// Populate each bin holder. bin_particlecount[ib][jb] is used keep track of how many particles we've been adding to each bin ///
-    #pragma omp parallel for
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        #pragma omp critical 
-        {
-            bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
-            bin_particlecount[ib][jb]++;
-        }
+        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
+        bin_particlecount[ib][jb]++;
+        //whichbin[2*i] = ib;
+        //whichbin[2*i+1] = jb;
+    }
+    }
+    
+    
+    #pragma omp for
+    for (int i = 0; i < num_parts; ++i) {
+        whichbin[2*i]   = (int)(parts[i].x / dxbin);
+        whichbin[2*i+1] = (int)(parts[i].y / dxbin);
     }
     
     // Compute Forces
-    #pragma omp parallel for
+    #pragma omp for
     for (int i = 0; i < num_parts; ++i) {
         int ib = whichbin[2*i];
         int jb = whichbin[2*i+1];
@@ -123,31 +137,8 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     }
     
     // Move Particles
-    #pragma omp parallel for
+    #pragma omp for
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
     }
-    
-    // free bin memory and reset particle counter to 0
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            // delete bins[ib][jb];
-            // printf("deleted \n");
-            #pragma omp critical
-            bin_particlecount[ib][jb]=0;
-        }
-    }
-        
-    // compute new bin counts and new particle bins
-    #pragma omp parallel for
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = (int)(parts[i].x / dxbin);
-        int jb = (int)(parts[i].y / dxbin);
-        #pragma omp critical
-        bin_particlecount[ib][jb]++;
-        whichbin[2*i] = ib;
-        whichbin[2*i+1] = jb;
-    }
-    
-    #pragma omp barrier
 }
