@@ -1,6 +1,9 @@
 #include "common.h"
 #include <cmath>
 #include <iostream>
+#include <vector>
+#include <forward_list>
+#include <iostream>
 
 // Apply the force from neighbor to particle
 void apply_force(particle_t& particle, particle_t& neighbor) {
@@ -43,88 +46,57 @@ void move(particle_t& p, double size) {
 }
 
 static int nbinsx;  // number of bins in one dimension (total number of bins = nbinsx^2)
-static particle_t*** bins; // 3D array that holds the particles in each bin (dimensions = (bins_x,bins_y,particles))
-static int** bin_particlecount; // 2D array, number of particles in each bin
-static int* whichbin; // array that holds which bin a given particle is in. the x-index of the bin that holds particle n°i is whichbin[2*i] and the y-index is whichbin[2*i+1]
+static std::vector<std::vector<std::forward_list<int>>> bins;
 static double dxbin; // length&width of each bin
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
     nbinsx = ((int)((double) size / (cutoff)) + 1);  // bin size greater or equal to cutoff length
     
     /// Allocate memory ///
-    whichbin = new int[2*num_parts];
-    bins = new particle_t**[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
-        bins[ib] = new particle_t*[nbinsx];
-    }
-    bin_particlecount = new int*[nbinsx];
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        bin_particlecount[ib] = new int[nbinsx];
-    }
-    
-    /// INITIALIZE - compute particle count per bin & which bin each particle is in  ///
-    dxbin = size / (double) nbinsx;
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = (int)(parts[i].x / dxbin);
-        int jb = (int)(parts[i].y / dxbin);
-        bin_particlecount[ib][jb]++;
-        whichbin[2*i] = ib;
-        whichbin[2*i+1] = jb;
-    }
-}
- 
-void simulate_one_step(particle_t* parts, int num_parts, double size) {
-    /// Allocate memory for each bin holder  ///
-    for (int ib = 0; ib < nbinsx; ++ib) {
+        std::vector<std::forward_list<int>> row;
+        bins.push_back(row);
         for (int jb = 0; jb < nbinsx; ++jb) {
-            bins[ib][jb] = new particle_t[bin_particlecount[ib][jb]];
-            bin_particlecount[ib][jb]=0; // put back to zero as we'll need it for the next loop
+            std::forward_list<int> list = {};
+            bins[ib].push_back(list);
         }
     }
-    /// Populate each bin holder. bin_particlecount[ib][jb] is used keep track of how many particles we've been adding to each bin ///
+        
+    dxbin = size / (double) nbinsx;
+}
+
+void simulate_one_step(particle_t* parts, int num_parts, double size) {
+    /// INITIALIZE - compute which bin each particle is in  ///
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
-        bin_particlecount[ib][jb]++;
+        bins[ib][jb].emplace_front(i);
     }
     
     // Compute Forces
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = whichbin[2*i];
-        int jb = whichbin[2*i+1];
-        parts[i].ax = parts[i].ay = 0;
-        // iterate only over neighboring bins
-        for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
-            for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
-                particle_t* local_bin = bins[local_i][local_j];
-                int count  = bin_particlecount[local_i][local_j];
-                for (int j = 0; j < count; ++j) {
-                    apply_force(parts[i], local_bin[j]);
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            for (int i : bins[ib][jb]) {
+                parts[i].ax = parts[i].ay = 0;
+                for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
+                    for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
+                        for (int j : bins[local_i][local_j]) {
+                                apply_force(parts[i], parts[j]);
+                        }
+                    }
                 }
             }
         }
     }
-    
+
     // Move Particles
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
     }
     
-    // free bin memory and reset particle counter to 0
     for (int ib = 0; ib < nbinsx; ++ib) {
         for (int jb = 0; jb < nbinsx; ++jb) {
-            delete bins[ib][jb];
-            bin_particlecount[ib][jb]=0;
+            bins[ib][jb].clear();
         }
-    }
-        
-    // compute new bin counts and new particle bins
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = (int)(parts[i].x / dxbin);
-        int jb = (int)(parts[i].y / dxbin);
-        bin_particlecount[ib][jb]++;
-        whichbin[2*i] = ib;
-        whichbin[2*i+1] = jb;
     }
 }
