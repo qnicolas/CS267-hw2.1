@@ -73,12 +73,25 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     /// Allocate memory for each bin holder  ///
     int id = omp_get_thread_num();
     int num_threads = omp_get_num_threads();
+    
+    //for some reason, uncommenting the parallel code below actually makes
+    //the code slower! it must be because the critical and barrier sections must
+    //be slowing the whole code down.  I don't think 
+    //#pragma omp atomic works with emplace_front.
+//     for (int i = id; i < num_parts; i+=num_threads) {
+//         int ib = (int)(parts[i].x / dxbin);
+//         int jb = (int)(parts[i].y / dxbin);
+//         #pragma omp critical
+//         bins[ib][jb].emplace_front(i);
+//     }
+    
+//     #pragma omp barrier
+    
     #pragma omp single
     {
-    for (int i = 0; i < num_parts; i++) {
+    for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        // #pragma omp critical
         bins[ib][jb].emplace_front(i);
     }
     }
@@ -92,7 +105,9 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
                 for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
                     for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
                         for (int j : bins[local_i][local_j]) {
-                                apply_force(parts[i], parts[j]);
+                                if (i != j) {
+                                    apply_force(parts[i], parts[j]);
+                                }
                         }
                     }
                 }
