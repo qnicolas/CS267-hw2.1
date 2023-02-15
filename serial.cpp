@@ -63,15 +63,16 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     }
         
     dxbin = size / (double) nbinsx;
-}
 
-void simulate_one_step(particle_t* parts, int num_parts, double size) {
     /// INITIALIZE - compute which bin each particle is in  ///
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
         bins[ib][jb].emplace_front(i);
     }
+}
+
+void simulate_one_step(particle_t* parts, int num_parts, double size) {
     
     // Compute Forces
     for (int ib = 0; ib < nbinsx; ++ib) {
@@ -91,12 +92,23 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
 
     // Move Particles
     for (int i = 0; i < num_parts; ++i) {
+
+        int old_ib = (int)(parts[i].x / dxbin);
+        int old_jb = (int)(parts[i].y / dxbin);
         move(parts[i], size);
-    }
-    
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            bins[ib][jb].clear();
+        
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        if (ib != old_ib || jb != old_jb) {
+            bins[old_ib][old_jb].remove(i);
+            bins[ib][jb].emplace_front(i);
         }
     }
+    
+//    for (int ib = 0; ib < nbinsx; ++ib) {
+//        for (int jb = 0; jb < nbinsx; ++jb) {
+//            bins[ib][jb].clear();
+//        }
+//    }
+
 }
