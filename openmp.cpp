@@ -1,12 +1,10 @@
-#include "common.h"
 #include <omp.h>
+#include "common.h"
 #include <cmath>
-
-#include <cstdio>
 #include <iostream>
-#include <chrono>
-using namespace std;
-using namespace std::chrono;
+#include <vector>
+#include <forward_list>
+#include <cstdio>
 
 // Apply the force from neighbor to particle
 void apply_force(particle_t& particle, particle_t& neighbor) {
@@ -49,96 +47,103 @@ void move(particle_t& p, double size) {
 }
 
 static int nbinsx;  // number of bins in one dimension (total number of bins = nbinsx^2)
-static particle_t*** bins; // 3D array that holds the particles in each bin (dimensions = (bins_x,bins_y,particles))
-static int** bin_particlecount; // 2D array, number of particles in each bin
-static int* whichbin; // array that holds which bin a given particle is in. the x-index of the bin that holds particle n°i is whichbin[2*i] and the y-index is whichbin[2*i+1]
+static std::vector<std::vector<std::forward_list<int>>> bins;
 static double dxbin; // length&width of each bin
-auto start = high_resolution_clock::now();
+//static int total,nthreadsx,nthreadsy,bins_per_thread_x,bins_per_thread_y;
 
 void init_simulation(particle_t* parts, int num_parts, double size) {
     nbinsx = ((int)((double) size / (cutoff)) + 1);  // bin size greater or equal to cutoff length
     
     /// Allocate memory ///
-    whichbin = new int[2*num_parts];
-    
-    bins = new particle_t**[nbinsx];
     for (int ib = 0; ib < nbinsx; ++ib) {
-        bins[ib] = new particle_t*[nbinsx];
+        std::vector<std::forward_list<int>> row;
+        bins.push_back(row);
+        for (int jb = 0; jb < nbinsx; ++jb) {
+            std::forward_list<int> list = {};
+            bins[ib].push_back(list);
+        }
     }
-    
-    bin_particlecount = new int*[nbinsx];
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        bin_particlecount[ib] = new int[nbinsx];
-    }
-    
-    /// INITIALIZE - compute particle count per bin & which bin each particle is in  ///
+        
     dxbin = size / (double) nbinsx;
+
+    /// INITIALIZE - compute which bin each particle is in  ///
     for (int i = 0; i < num_parts; ++i) {
         int ib = (int)(parts[i].x / dxbin);
         int jb = (int)(parts[i].y / dxbin);
-        bin_particlecount[ib][jb]++;
-        whichbin[2*i] = ib;
-        whichbin[2*i+1] = jb;
-    }
-    
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            bins[ib][jb] = new particle_t[10000];
-            bin_particlecount[ib][jb]=0;
-        }
+        bins[ib][jb].emplace_front(i);
     }
 }
- 
+
+
+typedef std::forward_list<int>::iterator IT;
+
+
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
-    /// Allocate memory for each bin holder  ///
-    #pragma omp single //for collapse(2)
-    {
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            //bins[ib][jb] = new particle_t[bin_particlecount[ib][jb]];
-            bin_particlecount[ib][jb]=0; // put back to zero as we'll need it for the next loop
-            
-        }
-    }
-    /// Populate each bin holder. bin_particlecount[ib][jb] is used keep track of how many particles we've been adding to each bin ///
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = (int)(parts[i].x / dxbin);
-        int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb][bin_particlecount[ib][jb]] = parts[i];
-        bin_particlecount[ib][jb]++;
-        //whichbin[2*i] = ib;
-        //whichbin[2*i+1] = jb;
-    }
-    }
+    int total = omp_get_num_threads();
+    int nthreadsx = (int) sqrt((double) total);
+    int nthreadsy = total/nthreadsx;
+    int bins_per_thread_x = nbinsx / nthreadsx +1;
+    int bins_per_thread_y = nbinsx / nthreadsy +1;
     
-    
-    #pragma omp for
-    for (int i = 0; i < num_parts; ++i) {
-        whichbin[2*i]   = (int)(parts[i].x / dxbin);
-        whichbin[2*i+1] = (int)(parts[i].y / dxbin);
-    }
-    
+    int rank = omp_get_thread_num();
+    int ib_min = (rank/nthreadsx)*bins_per_thread_x;
+    int jb_min = (rank%nthreadsy)*bins_per_thread_y;
+       
     // Compute Forces
-    #pragma omp for
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = whichbin[2*i];
-        int jb = whichbin[2*i+1];
-        parts[i].ax = parts[i].ay = 0;
-        // iterate only over neighboring bins
-        for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
-            for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
-                particle_t* local_bin = bins[local_i][local_j];
-                int count  = bin_particlecount[local_i][local_j];
-                for (int j = 0; j < count; ++j) {
-                    apply_force(parts[i], local_bin[j]);
+    for (int ib = ib_min; ib < fmin(nbinsx,ib_min+bins_per_thread_x); ++ib) {
+        for (int jb = jb_min; jb < fmin(nbinsx,jb_min+bins_per_thread_y); ++jb) {
+            for (int i : bins[ib][jb]) {
+                parts[i].ax = parts[i].ay = 0;
+                for (int local_i = fmax(0,ib-1); local_i <= fmin(nbinsx-1,ib+1); ++local_i){
+                    for (int local_j = fmax(0,jb-1); local_j <= fmin(nbinsx-1,jb+1); ++local_j){
+                        for (int j : bins[local_i][local_j]) {
+                            apply_force(parts[i], parts[j]);
+                        }
+                    }
                 }
             }
         }
     }
+    #pragma omp barrier
     
     // Move Particles
-    #pragma omp for
+    #pragma omp single
+    {
     for (int i = 0; i < num_parts; ++i) {
+        int old_ib = (int)(parts[i].x / dxbin);
+        int old_jb = (int)(parts[i].y / dxbin);
         move(parts[i], size);
+        
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        if (ib != old_ib || jb != old_jb) {
+            bins[old_ib][old_jb].remove(i);
+            bins[ib][jb].emplace_front(i);
+        }
     }
+    }
+    //#pragma omp single
+    //{    
+    //for (int ib = 0; ib < nbinsx; ++ib) {
+    //    for (int jb = 0; jb < nbinsx; ++jb) {
+    //        IT before = bins[ib][jb].before_begin();
+    //        for (IT it = bins[ib][jb].begin(); it != bins[ib][jb].end(); ){
+    //            int i = *it;
+    //            move(parts[i], size);
+    //            int new_ib = (int)(parts[i].x / dxbin);
+    //            int new_jb = (int)(parts[i].y / dxbin);
+    //            if (ib != new_ib || jb != new_jb) {
+    //                it = bins[ib][jb].erase_after( before );
+    //                bins[new_ib][new_jb].emplace_front(i);
+    //            } 
+    //            else{
+    //                before = it;
+    //                ++it;
+    //            }
+    //        }
+    //        
+    //    }
+    //}
+    //}
+    //#pragma omp barrier
 }
