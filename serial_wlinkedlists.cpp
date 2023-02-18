@@ -1,4 +1,3 @@
-#include <omp.h>
 #include "common.h"
 #include <cmath>
 #include <iostream>
@@ -46,7 +45,7 @@ void move(particle_t& p, double size) {
     }
 }
 
-// Creating a node
+// Linked List class
 class Node {
    public:
    int partnum;
@@ -91,24 +90,10 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
 }
 
 
-
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
-    int total = omp_get_num_threads();
-    int nthreadsx = (int) sqrt((double) total);
-    int nthreadsy = total/nthreadsx;
-    int bins_per_thread_x = nbinsx / nthreadsx +1;
-    int bins_per_thread_y = nbinsx / nthreadsy +1;
-    
-    int rank = omp_get_thread_num();
-    int ib_min = (rank/nthreadsx)*bins_per_thread_x;
-    int jb_min = (rank%nthreadsy)*bins_per_thread_y;
-    
-    int ib_max = fmin(nbinsx,ib_min+bins_per_thread_x);
-    int jb_max = fmin(nbinsx,jb_min+bins_per_thread_y);
-    
     // Compute Forces
-    for (int ib = ib_min; ib < ib_max; ++ib) {
-        for (int jb = jb_min; jb < jb_max; ++jb) {
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
             // iterate over the linked list
             Node* it = bins[ib][jb]->next;
             while(it != NULL){
@@ -129,27 +114,24 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
             }
         }
     }
-    #pragma omp barrier
     
     // Move particles
-    for (int ib = ib_min; ib < ib_max; ++ib) {
-        for (int jb = jb_min; jb < jb_max; ++jb) {
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
             Node* it_before = bins[ib][jb];
             while(it_before->next != NULL){
                 int i = it_before->next->partnum;
                 move(parts[i], size);
                 int new_ib = (int)(parts[i].x / dxbin);
-                int new_jb = (int)(parts[i].y / dxbin);  
+                int new_jb = (int)(parts[i].y / dxbin);   
                 // if the particle has changed bins
                 if (ib != new_ib || jb != new_jb) {
                     // delete particle from current bin
                     it_before->next = it_before->next->next;
-                    // emplace particle in new bin
+                    // emplace particle in newelements bin
                     Node* nd = new Node();
                     nd->partnum = i;
-                    #pragma omp atomic read
                     nd->next = newelements[new_ib][new_jb];
-                    #pragma omp atomic write
                     newelements[new_ib][new_jb] = nd;
                 } 
                 else{
@@ -159,11 +141,10 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
             
         }
     }
-    #pragma omp barrier
     
     // Take all the particles that have moved (and have been placed temporarily in newelements) and put them in their new bins
-    for (int ib = ib_min; ib < ib_max; ++ib) {
-        for (int jb = jb_min; jb < jb_max; ++jb) {
+    for (int ib = 0; ib < nbinsx; ++ib) {
+        for (int jb = 0; jb < nbinsx; ++jb) {
             Node* newelem = newelements[ib][jb];
             while(newelem != NULL){
                 Node* nd = new Node();
@@ -175,11 +156,5 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
             newelements[ib][jb] = (Node*) NULL;
         }
     }
-    #pragma omp barrier
 
 }
-
-
-
-
-    
