@@ -67,6 +67,12 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     }
         
     dxbin = size / (double) nbinsx;
+    
+    for (int i = 0; i < num_parts; ++i) {
+        int ib = (int)(parts[i].x / dxbin);
+        int jb = (int)(parts[i].y / dxbin);
+        bins[ib][jb].emplace_front(i);
+    }
 }
  
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
@@ -74,30 +80,8 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     int id = omp_get_thread_num();
     int num_threads = omp_get_num_threads();
     
-    //for some reason, uncommenting the parallel code below actually makes
-    //the code slower! it must be because the critical and barrier sections must
-    //be slowing the whole code down.  I don't think 
-    //#pragma omp atomic works with emplace_front.
-//     for (int i = id; i < num_parts; i+=num_threads) {
-//         int ib = (int)(parts[i].x / dxbin);
-//         int jb = (int)(parts[i].y / dxbin);
-//         #pragma omp critical
-//         bins[ib][jb].emplace_front(i);
-//     }
-    
-//     #pragma omp barrier
-    
-    #pragma omp single
-    {
-    for (int i = 0; i < num_parts; ++i) {
-        int ib = (int)(parts[i].x / dxbin);
-        int jb = (int)(parts[i].y / dxbin);
-        bins[ib][jb].emplace_front(i);
-    }
-    }
-    
-    // Compute Forces
-    // #pragma omp for
+//     // Compute Forces
+    // #pragma omp parallel for
     for (int ib = id; ib < nbinsx; ib+=num_threads) {
         for (int jb = 0; jb < nbinsx; ++jb) {
             for (int i : bins[ib][jb]) {
@@ -118,17 +102,23 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     #pragma omp barrier
     
     // Move Particles
-    // #pragma omp for
-    for (int i = id; i < num_parts; i+=num_threads) {
-        move(parts[i], size);
-    }
-    
+    // for (int i = id; i < num_parts; i+=num_threads) {
     #pragma omp single
     {
-    for (int ib = 0; ib < nbinsx; ++ib) {
-        for (int jb = 0; jb < nbinsx; ++jb) {
-            bins[ib][jb].clear();
+        for (int i = 0; i < num_parts; ++i) {
+            int old_ib = (int)(parts[i].x / dxbin);
+            int old_jb = (int)(parts[i].y / dxbin);
+            move(parts[i], size);
+
+            int ib = (int)(parts[i].x / dxbin);
+            int jb = (int)(parts[i].y / dxbin);
+            // #pragma omp critical
+            // {
+                if (ib != old_ib || jb != old_jb) {
+                    bins[old_ib][old_jb].remove(i);
+                    bins[ib][jb].emplace_front(i);
+                }
+            // }
         }
-    }
     }
 }
